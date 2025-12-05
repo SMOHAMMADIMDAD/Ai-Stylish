@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global Theme Variables */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --accent: #f97316; /* Tailwind orange-500 */
+  --muted: #9ca3af;   /* Tailwind gray-400 */
+  --radius: 0.75rem;  /* 12px rounded corners */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --accent: #facc15; /* Tailwind yellow-400 */
+    --muted: #6b7280;  /* Tailwind gray-500 */
+  }
+}
+
+/* Base Reset + Improvements */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* A more pleasant default button reset */
+button {
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500;
+}
+
+/* Modal scroll prevention */
+body.modal-open {
+  overflow: hidden;
+}
+
+/* Smooth scroll for better UX */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Better default for links */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Add global utility for rounded layout elements */
+.rounded-global {
+  border-radius: var(--radius);
+}
