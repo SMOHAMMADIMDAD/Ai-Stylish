@@ -106,5 +106,6 @@ const api = process.env.NEXT_PUBLIC_API_URL;
 
 S Mohammad Imdad
 AI & Full-Stack Developer
-Passionate about AI fashion technology & intelligent systems.# Ai-Stylish
+Passionate about AI fashion technology & intelligent systems.
+# Ai-Stylish
 AI Stylist is an AI-powered fashion assistant that analyzes wardrobe images, extracts primary &amp; secondary colors, generates color palettes, and recommends matching outfits using color harmony rules and semantic similarity. Built using Python, ColorThief, KMeans, and modern embedding models.
