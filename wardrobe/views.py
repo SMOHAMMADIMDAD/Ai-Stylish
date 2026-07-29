@@ -1,3 +1,6 @@
+from asyncio.log import logger
+from unittest import result
+
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -21,6 +24,13 @@ from django.conf import settings
 from django.http import JsonResponse # Keep this for test_api and clothing_list
 import random
 from django.db.models.functions import Lower
+from wardrobe.utils.clip_classifier import analyze_clothing
+COLOR_WEIGHT = 0.25
+STYLE_WEIGHT = 0.15
+VISUAL_WEIGHT = 0.60
+
+HARMONY_BONUS = 0.10
+CLASH_PENALTY = 0.20
 
 # 🎨 Color theory palette matching
 COLOR_PALETTE_MAP = {
@@ -97,6 +107,7 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated] # Changed to IsAuthenticated
 
     def get_queryset(self):
+    
         """
         This view should return a list of all the clothing items
         for the currently authenticated user.
@@ -111,22 +122,43 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
         """
         Save the clothing item with the current authenticated user.
         """
-        instance = serializer.save(user=self.request.user) # Assign the current user
+        instance = serializer.save(user=self.request.user)
 
+    # -----------------------------
+    # AI Analysis
+    # -----------------------------
         try:
-            model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
-            image = Image.open(instance.image.path).convert("RGB")
-            image_input = preprocess(image).unsqueeze(0)
-            with torch.no_grad():
-                image_features = model.encode_image(image_input)
-            instance.feature_vector = json.dumps(image_features.tolist()[0])
-        except Exception as e:
-            print(f"⚠️ Feature extraction failed: {e}")
-            instance.feature_vector = None
+            result = analyze_clothing(instance.image.path)
+            print(result)
 
+            instance.feature_vector = json.dumps(result["feature_vector"])
+            instance.category = result["category"]
+            instance.subcategory = result["subcategory"]
+
+            if result["category"] is not None:
+                instance.clothing_type = result["category"]
+
+            logger.info(
+                "Detected Category: %s | Subcategory: %s | Confidence: %.4f",
+                result["category"],
+                result["subcategory"],
+                result["confidence"],
+                )
+
+        except Exception:
+            logger.exception("AI analysis failed.")
+
+            instance.feature_vector = None
+            instance.category = None
+            instance.subcategory = None
+
+    # -----------------------------
+    # Color Extraction
+    # -----------------------------
         try:
             if instance.image:
                 palette = extract_color_palette(instance.image.path, num_colors=5)
+
                 if palette:
                     instance.primary_color = hex_to_name_extended(palette[0])
                     instance.color_palette = palette
@@ -136,14 +168,17 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
             else:
                 instance.primary_color = "unknown"
                 instance.color_palette = []
-        except Exception as e:
-            print(f"⚠️ Color extraction failed: {e}")
+
+        except Exception:
+            logger.exception("Color extraction failed.")
+
             instance.primary_color = "unknown"
             instance.color_palette = []
 
-        instance.save() # Save again after updating feature_vector and color info
-
-    @action(detail=True, methods=['get'])
+    # -----------------------------
+    # Save everything
+    # -----------------------------
+        instance.save()
     def palette(self, request, pk=None):
         item = self.get_object() # get_object will already filter by user
         return Response({
@@ -152,37 +187,99 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
             "color_palette": item.color_palette
         })
 
+    from rest_framework import status
+
     @action(detail=True, methods=['get'])
     def similar(self, request, pk=None):
-        item = self.get_object() # get_object will already filter by user
+        """
+        Return the top 4 visually similar clothing items
+        for the currently authenticated user.
+        """
+
+        item = self.get_object()
+
+    # -----------------------------
+    # Validate target feature vector
+    # -----------------------------
         if not item.feature_vector:
-            return Response({"error": "No feature vector found for this item."}, status=400)
+            return Response(
+                {"error": "Feature vector not available for this clothing item."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
-            target_vector = torch.tensor(json.loads(item.feature_vector), dtype=torch.float32)
-        except Exception as e:
-            return Response({"error": f"Invalid feature vector: {str(e)}"}, status=400)
+            target_vector = torch.tensor(
+                json.loads(item.feature_vector),
+                dtype=torch.float32,
+            )
+
+        except Exception:
+            logger.exception(
+                "Invalid feature vector for clothing item ID %s",
+                item.id,
+            )
+            return Response(
+                {"error": "Invalid feature vector."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         similarities = []
-        # Exclude current item and filter by current user's items
-        for other in ClothingItem.objects.filter(user=request.user).exclude(id=item.id).exclude(feature_vector=None):
+
+    # -----------------------------
+    # Find similar clothing items
+    # -----------------------------
+        queryset = (
+            ClothingItem.objects
+            .filter(user=request.user)
+            .exclude(id=item.id)
+            .exclude(feature_vector__isnull=True)
+        )
+
+        for other in queryset:
             try:
-                other_vec = torch.tensor(json.loads(other.feature_vector), dtype=torch.float32)
-                sim = torch.nn.functional.cosine_similarity(target_vector, other_vec, dim=0)
-                sim_value = sim.item()
-                if 0.65 < sim_value < 1.0: # Only consider reasonably similar items
-                    similarities.append((other, sim_value))
+                other_vector = torch.tensor(
+                    json.loads(other.feature_vector),
+                    dtype=torch.float32,
+                )
+
+                similarity = torch.nn.functional.cosine_similarity(
+                    target_vector,
+                    other_vector,
+                    dim=0,
+                ).item()
+
+            # Ignore identical items and weak matches
+                if 0.65 < similarity < 1.0:
+                    similarities.append((other, similarity))
+
             except Exception:
+                logger.exception(
+                    "Failed to compare feature vector for clothing item ID %s",
+                    other.id,
+                )
                 continue
 
-        similarities.sort(key=lambda x: x[1], reverse=True)
+    # -----------------------------
+    # Sort by similarity
+    # -----------------------------
+        similarities.sort(
+            key=lambda item: item[1],
+            reverse=True,
+        )
 
-        return Response([
-            {
-                **self.get_serializer(obj).data,
-                "similarity_score": round(score, 4)
-            } for obj, score in similarities[:4]
-        ])
-
+    # -----------------------------
+    # Return top 4 recommendations
+    # -----------------------------
+        return Response(
+            [
+                {
+                    **self.get_serializer(obj).data,
+                    "similarity_score": round(score, 4),
+                }
+                for obj, score in similarities[:4]
+            ],
+            status=status.HTTP_200_OK,
+        )
     @action(detail=False, methods=['post'])
     def generate_outfit(self, request):
         base_id = request.data.get("base_item_id")
@@ -209,8 +306,15 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
 
         to_match = match_map.get(base_item.clothing_type.lower(), [])
         # Only consider categories that have at least one item for the current user
-        categories = {t: list(wardrobe.filter(clothing_type__iexact=t)) for t in to_match if wardrobe.filter(clothing_type__iexact=t).exists()}
+        categories = {}
 
+        for t in to_match:
+            items = list(
+                wardrobe.filter(clothing_type__iexact=t)
+            )
+
+            if items:
+                categories[t] = items
 
         # If no categories have items to match, return an error
         if not any(categories.values()):
@@ -220,7 +324,7 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
         outfits = []
 
         for combo in all_combinations:
-            outfit_data = {"base": ClothingItemSerializer(base_item).data}
+            outfit_data = { "base": self.get_serializer(base_item).data}
             explanation_parts = []
             tags = []
             vectors = []
@@ -230,9 +334,13 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
                 if item.feature_vector:
                     try:
                         vectors.append(torch.tensor(json.loads(item.feature_vector), dtype=torch.float32))
-                    except:
-                        # Skip items with invalid feature vectors
+                    except Exception:
+                        logger.exception(
+                            "Invalid feature vector for clothing item ID %s",
+                            item.id,
+                        )
                         continue
+            serializer = self.get_serializer
 
             visual_score = 0.5 # Default if no visual scores can be calculated
             if len(vectors) > 1:
@@ -240,11 +348,14 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
                 for i in range(len(vectors)):
                     for j in range(i+1, len(vectors)):
                         try:
-                            sim = torch.nn.functional.cosine_similarity(vectors[i], vectors[j], dim=0).item()
-                            visual_scores.append(sim)
-                        except Exception as e:
-                            print(f"Error calculating visual similarity: {e}")
-                            continue # Skip this pair if an error occurs
+                            similarity = torch.nn.functional.cosine_similarity(vectors[i], vectors[j], dim=0).item()
+                            visual_scores.append(similarity)
+                        except Exception:
+                            logger.exception(
+                            "Failed to calculate visual similarity between outfit items."
+                            )
+                            continue# Skip this pair if an error occurs
+            
 
                 if visual_scores:
                     visual_score = sum(visual_scores) / len(visual_scores)
@@ -252,38 +363,66 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
                     visual_score = 0.5 # Fallback if calculation failed for all pairs
 
             total_score = 0
+
             for item in combo:
                 clothing_type = item.clothing_type.lower()
-                outfit_data[clothing_type] = ClothingItemSerializer(item).data
+                outfit_data[clothing_type] = serializer(item).data
 
-                color_score = color_match_score_palette(base_item.color_palette, item.color_palette)
-                style_score = style_match_score(base_item.style, item.style)
-                harmony = get_color_relationship(base_item.primary_color, item.primary_color)
-                harmony_bonus = 0.1 if harmony in ["complementary", "analogous", "triadic"] else 0
-                clash_penalty = 0.2 if style_score == 0 and color_score < 0.5 else 0
+                color_score = color_match_score_palette(
+                    base_item.color_palette,
+                        item.color_palette,
+                )
+
+                style_score = style_match_score(
+                    base_item.style,
+                    item.style,
+                )
+
+                harmony = get_color_relationship(
+                    base_item.primary_color,
+                    item.primary_color,
+                    )
+
+                harmony_bonus = (
+                    HARMONY_BONUS
+                    if harmony in ["complementary", "analogous", "triadic"]
+                    else 0
+                    )
+
+                clash_penalty = (
+                    CLASH_PENALTY
+                    if style_score == 0 and color_score < 0.5
+                    else 0
+                )
 
                 weighted_score = (
-                    0.25 * color_score +
-                    0.15 * style_score +
-                    0.6 * visual_score + # Visual score is now calculated once for the whole outfit
-                    harmony_bonus -
-                    clash_penalty
+                    COLOR_WEIGHT * color_score
+                    + STYLE_WEIGHT * style_score
+                    + VISUAL_WEIGHT * visual_score
+                    + harmony_bonus
+                    - clash_penalty
                 )
 
                 total_score += weighted_score
 
                 if color_score >= 0.9:
                     tags.append("Color Harmony")
+
                 if style_score == 1.0:
                     tags.append("Style Aligned")
-                if harmony and harmony != 'no relationship': # Only add if a specific relationship exists
+
+                if harmony and harmony != "no relationship":
                     tags.append(f"{harmony.capitalize()} Colors")
+
                 if visual_score > 0.85:
                     tags.append("Visually Cohesive")
 
                 explanation_parts.append(
-                    f"{clothing_type}: color_match={round(color_score,2)}, style_match={round(style_score,2)}, harmony={harmony or 'none'}"
-                )
+                    f"{clothing_type}: "
+                    f"color_match={round(color_score,2)}, "
+                    f"style_match={round(style_score,2)}, "
+                    f"harmony={harmony or 'none'}"
+                )   
 
             # Average total_score across the number of items matched in the combo
             # This helps normalize scores for outfits with different numbers of items
@@ -392,6 +531,7 @@ class ClothingItemViewSet(viewsets.ModelViewSet):
             }
         
         return None # Return None if a complete outfit could not be formed.
+
 # Existing test and authentication views (no changes needed for multi-user here)
 def test_api(request):
     return JsonResponse({'message': 'Hello from Django!'})

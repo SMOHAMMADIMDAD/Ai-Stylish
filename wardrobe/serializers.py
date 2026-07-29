@@ -28,11 +28,18 @@ class ClothingItemSerializer(serializers.ModelSerializer):
             'primary_color', 
             'color_palette',
             'feature_vector',
+            'category',
+            'subcategory'
         ]
         
         # These fields are populated by the server, not the client.
-        read_only_fields = ['primary_color', 'color_palette', 'feature_vector']
-
+        read_only_fields = [
+            'primary_color',
+            'color_palette',
+            'feature_vector',
+            'category',
+            'subcategory'
+        ]
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
