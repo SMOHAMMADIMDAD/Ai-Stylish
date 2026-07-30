@@ -73,16 +73,15 @@ TEMPLATES = [
 WSGI_APPLICATION = 'zyvia_backend.wsgi.application'
 
 # --- Database Configuration ---
+import dj_database_url
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'fas_data',
-        'USER': 'postgres',
-        'PASSWORD': 'imdad123',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    "default": dj_database_url.config(
+        default="postgresql://postgres:imdad123@localhost:5432/fas_data",
+        conn_max_age=600,
+    )
 }
+
 
 # --- Password Validation ---
 AUTH_PASSWORD_VALIDATORS = [
@@ -157,3 +156,7 @@ LOGGING = {
         'level': 'INFO',
     },
 }
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = (
+    "whitenoise.storage.CompressedManifestStaticFilesStorage"
+)
