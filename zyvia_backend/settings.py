@@ -6,13 +6,17 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Secret Key (don't share in production)
-SECRET_KEY = 'your-secret-key' # Please use your actual secret key here
-
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-local-development-key"
+)
 # Debug Mode
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
+DEBUG = os.environ.get("DEBUG", "True") == "True"
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    ".onrender.com",
+]
 # --- Application definition ---
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -40,6 +44,7 @@ MIDDLEWARE = [
 
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -130,7 +135,6 @@ CORS_ALLOWED_ORIGINS = [
     "http://192.168.31.169:3000",
 ]
 
-
 # ✅ This allows the frontend to send the 'Authorization' header.
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -153,4 +157,3 @@ LOGGING = {
         'level': 'INFO',
     },
 }
-CORS_ALLOW_ALL_ORIGINS = True
