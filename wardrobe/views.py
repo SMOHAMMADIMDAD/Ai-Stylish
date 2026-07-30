@@ -8,7 +8,6 @@ from rest_framework import status
 from difflib import SequenceMatcher
 from itertools import product
 from PIL import Image
-import open_clip
 import torch
 import json
 from rest_framework.permissions import AllowAny, IsAuthenticated
