@@ -1,25 +1,21 @@
-'use client'
+"use client";
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { AnimatePresence, motion } from 'framer-motion'
-import { useSwipeable } from 'react-swipeable'
+import AppShell from "./components/layout/AppShell";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import {
-  LayoutGrid,
+  ArrowRight,
+  Heart,
   Loader2,
-  Moon,
   Shirt,
   Sparkles,
-  Sun,
   Wand2,
-  LogIn,
-  Frown,
-  X,
-  Heart,
-} from 'lucide-react'
-import * as auth from '@/lib/auth'
+  Plus,
+  RefreshCw,
+} from "lucide-react";
+import * as auth from "@/lib/auth";
 
-// --- Interfaces ---
 interface ClothingItem {
   id: number;
   name: string;
@@ -42,618 +38,732 @@ interface Outfit {
   tags: string[];
 }
 
-// --- WardrobeGrid ---
-function WardrobeGrid({
-  items,
-  isLoading,
-  error,
-  onSelectItem,
-  selectedItemId
-}: {
-  items: ClothingItem[],
-  isLoading: boolean,
-  error: string | null,
-  onSelectItem: (id: number) => void,
-  selectedItemId: number | null
-}) {
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-500">
-        <Loader2 className="w-12 h-12 animate-spin mb-4" />
-        <p className="font-semibold">Loading your wardrobe...</p>
-      </div>
-    )
-  }
+const API_BASE = "http://127.0.0.1:8000";
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-red-500">
-        <Frown className="w-12 h-12 mb-4" />
-        <p className="font-semibold">Could not load wardrobe</p>
-        <p className="text-sm">{error}</p>
-      </div>
-    )
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-500">
-        <Shirt className="w-12 h-12 mb-4" />
-        <p className="font-semibold">Your wardrobe is empty</p>
-        <p className="text-sm text-center">Click the '+' button to add your first item!</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-        <h3 className="text-xl font-bold text-center mb-4 text-zinc-800 dark:text-zinc-200">Your Wardrobe</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 overflow-y-auto pr-2 -mr-2">
-          {items.map((item) => (
-            <motion.div
-              key={item.id}
-              className="relative aspect-square rounded-2xl overflow-hidden shadow-md cursor-pointer group"
-              whileHover={{ scale: 1.05 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => onSelectItem(item.id)}
-              animate={{
-                scale: selectedItemId === item.id ? 1.05 : 1,
-                boxShadow: selectedItemId === item.id
-                  ? '0 0 0 4px #EC4899'
-                  : '0 4px 10px rgba(0, 0, 0, 0.1)'
-              }}
-            >
-              <img src={item.image} alt={item.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
-              <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent">
-                <p className="text-white text-sm font-bold truncate">{item.name}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-    </div>
-  )
+function getFullImageUrl(url?: string) {
+  if (!url) return "";
+  return url.startsWith("http") ? url : `${API_BASE}${url}`;
 }
 
-// --- OutfitGenerator ---
-function OutfitGenerator({
-  baseItem,
-  occasion, setOccasion,
-  outfits, loading, error, onSubmit, onClearBaseItem
+/* -------------------------------------------------------
+   Small reusable image card
+------------------------------------------------------- */
+
+function ClothingCard({
+  item,
+  onClick,
 }: {
-  baseItem: ClothingItem | null;
-  occasion: string;
-  setOccasion: (o: string) => void;
-  outfits: Outfit[];
-  loading: boolean;
-  error: string | null;
-  onSubmit: (e: React.FormEvent) => void;
-  onClearBaseItem: () => void;
+  item: ClothingItem;
+  onClick?: () => void;
 }) {
-  const getFullImageUrl = (url: string) =>
-    url.startsWith('http') ? url : `http://localhost:8000${url}`;
+  return (
+    <motion.div
+      whileHover={{ y: -5 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClick}
+      className="group cursor-pointer"
+    >
+      <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-[#f4eef5] shadow-sm">
+        <img
+          src={getFullImageUrl(item.image)}
+          alt={item.name}
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
 
-  const renderItem = (item?: ClothingItem) => {
-    if (!item) return null;
-    return (
-      <div key={item.id} className="text-center">
-        <img src={getFullImageUrl(item.image)} alt={item.name} className="w-full h-32 object-contain rounded-lg bg-zinc-100 dark:bg-zinc-800"/>
-        <div className="mt-2 text-sm font-semibold truncate text-zinc-700 dark:text-zinc-300">{item.name}</div>
-        <div className="text-xs text-zinc-500 capitalize">{item.clothing_type}</div>
-      </div>
-    );
-  };
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-4 pt-12">
+          <p className="truncate text-sm font-semibold text-white">
+            {item.name}
+          </p>
 
-  if (!baseItem) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-zinc-500">
-        <Shirt className="w-12 h-12 mb-4" />
-        <p className="font-semibold">Select a Base Item</p>
-        <p className="text-sm">Go to your 'Wardrobe' to pick an item to build an outfit around.</p>
+          <p className="mt-0.5 text-xs capitalize text-white/75">
+            {item.clothing_type}
+          </p>
+        </div>
       </div>
-    )
-  }
+    </motion.div>
+  );
+}
+
+/* -------------------------------------------------------
+   Outfit item
+------------------------------------------------------- */
+
+function OutfitItem({
+  item,
+  label,
+}: {
+  item?: ClothingItem;
+  label: string;
+}) {
+  if (!item) return null;
 
   return (
-    <div className="flex flex-col h-full text-left">
-      <form onSubmit={onSubmit} className="space-y-4 mb-6">
-        <div>
-          <label className="block text-sm font-semibold mb-2 text-zinc-700 dark:text-zinc-300">Base Item</label>
-          <div className="flex items-center gap-4 p-2 border border-zinc-200 dark:border-zinc-700 rounded-xl bg-zinc-50 dark:bg-zinc-800">
-             <img src={getFullImageUrl(baseItem.image)} alt={baseItem.name} className="w-16 h-16 rounded-lg object-cover"/>
-             <div className="flex-grow">
-               <p className="font-bold text-zinc-800 dark:text-zinc-200">{baseItem.name}</p>
-               <p className="text-xs text-zinc-500 capitalize">{baseItem.style} {baseItem.clothing_type}</p>
-             </div>
-             <button type="button" onClick={onClearBaseItem} className="p-1.5 rounded-full text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
-               <X className="w-4 h-4" />
-             </button>
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold mb-1 text-zinc-700 dark:text-zinc-300">Occasion</label>
-          <select
-            value={occasion}
-            onChange={(e) => setOccasion(e.target.value)}
-            className="border border-zinc-300 dark:border-zinc-600 rounded-lg px-4 py-2 w-full bg-white dark:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-pink-500 appearance-none"
-          >
-            <option value="casual">Casual</option>
-            <option value="formal">Formal</option>
-            <option value="party">Party</option>
-            <option value="work">Work</option>
-          </select>
-        </div>
-        <button
-          type="submit"
-          className="w-full py-3 px-4 rounded-lg text-white font-semibold bg-gradient-to-r from-pink-500 to-fuchsia-600 hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Generate Outfit'}
-        </button>
-      </form>
-      {error && <p className="text-red-500 text-center mb-4">{error}</p>}
-      <div className="flex-grow overflow-y-auto pr-2 -mr-2">
-        {loading ? (
-          <div className="space-y-4">
-            {Array.from({ length: 2 }).map((_, idx) => (
-              <div key={idx} className="animate-pulse h-56 bg-zinc-200 dark:bg-zinc-800 rounded-xl"></div>
-            ))}
-          </div>
-        ) : outfits.length > 0 ? (
-          <div className="space-y-4">
-            {outfits.map((outfit, i) => (
-              <div key={i} className="border border-zinc-200 dark:border-zinc-700 rounded-xl p-4 shadow-sm bg-white/50 dark:bg-zinc-800/50">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-3">
-                  {renderItem(outfit.base)}
-                  {renderItem(outfit.top)}
-                  {renderItem(outfit.bottom)}
-                  {renderItem(outfit.shoes)}
-                </div>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400 mb-2">{outfit.explanation}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {outfit.tags.map((tag, idx) => (
-                      <span key={idx} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">{tag}</span>
-                    ))}
-                  </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          !error && <p className="text-center text-zinc-500 mt-8">Generated outfits will appear here.</p>
-        )}
+    <div>
+      <div className="aspect-square overflow-hidden rounded-2xl bg-[#f6f1f6]">
+        <img
+          src={getFullImageUrl(item.image)}
+          alt={item.name}
+          className="h-full w-full object-cover"
+        />
       </div>
+
+      <p className="mt-2 text-sm font-semibold text-zinc-800">
+        {item.name}
+      </p>
+
+      <p className="text-xs text-zinc-500">{label}</p>
     </div>
   );
 }
 
-// --- RecommendedOutfitDisplay ---
-function RecommendedOutfitDisplay({ outfit, isLoading, error }: {
-  outfit: Outfit | null,
-  isLoading: boolean,
-  error: string | null
-}) {
-  const getFullImageUrl = (url: string) =>
-    url.startsWith('http') ? url : `http://localhost:8000${url}`;
+/* -------------------------------------------------------
+   Home
+------------------------------------------------------- */
 
-  const renderItem = (item?: ClothingItem, label?: string) => {
-    if (!item) return null;
-    return (
-      <div className="text-center">
-        <div className="relative aspect-square bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden shadow-sm group">
-            <img src={getFullImageUrl(item.image)} alt={item.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"/>
-        </div>
-        <div className="mt-2 text-sm font-semibold truncate text-zinc-800 dark:text-zinc-200">{item.name}</div>
-        <div className="text-xs text-zinc-500 capitalize">{label || item.clothing_type}</div>
-      </div>
-    );
-  };
-  
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-        <Loader2 className="w-12 h-12 animate-spin mb-4" />
-        <p className="font-semibold">Finding your Outfit of the Day...</p>
-      </div>
-    )
-  }
+export default function ZyviaHome() {
+  const router = useRouter();
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-red-500">
-        <Frown className="w-12 h-12 mb-4" />
-        <p className="font-semibold">Could not get your outfit</p>
-        <p className="text-sm">{error}</p>
-      </div>
-    )
-  }
-  
-  if (!outfit) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-zinc-500">
-        <Sparkles className="w-12 h-12 mb-4" />
-        <p className="font-semibold">No outfit available</p>
-        <p className="text-sm">Add items to your wardrobe to get an Outfit of the Day!</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-        <h3 className="text-xl font-bold text-center mb-4 text-zinc-800 dark:text-zinc-200">Outfit of the Day</h3>
-        <div className="flex-grow overflow-y-auto pr-2 -mr-2">
-            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 shadow-lg bg-white/30 dark:bg-zinc-900/30">
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                    {renderItem(outfit.top, 'Top')}
-                    {renderItem(outfit.bottom, 'Bottom')}
-                    {renderItem(outfit.shoes, 'Shoes')}
-                    {renderItem(outfit.outerwear, 'Outerwear')}
-                </div>
-                <p className="text-sm text-zinc-700 dark:text-zinc-300 mb-3">{outfit.explanation}</p>
-                <div className="flex flex-wrap gap-2 mb-4">
-                    {outfit.tags.map((tag, idx) => (
-                    <span key={idx} className="text-xs bg-purple-100 text-purple-800 px-2.5 py-1 rounded-full font-medium">{tag}</span>
-                    ))}
-                </div>
-                <button className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-white font-semibold bg-pink-500 hover:bg-pink-600 transition-colors">
-                    <Heart className="w-4 h-4" />
-                    Save Outfit
-                </button>
-            </div>
-        </div>
-    </div>
-  )
-}
-
-
-// --- MAIN UI COMPONENT ---
-const tabs = [
-  { name: 'Wardrobe', icon: Shirt },
-  { name: 'Recommended', icon: Sparkles },
-  { name: 'Generate Outfit', icon: Wand2 },
-]
-
-export default function ZyviaProUI() {
-  const [activeTab, setActiveTab] = useState(tabs[0].name)
-  const [darkMode, setDarkMode] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [username, setUsername] = useState<string | null>(null)
-  const [globalError, setGlobalError] = useState<string | null>(null)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const router = useRouter()
+  const [username, setUsername] = useState<string | null>(null);
 
   const [wardrobeItems, setWardrobeItems] = useState<ClothingItem[]>([]);
-  const [isWardrobeLoading, setIsWardrobeLoading] = useState(false);
-  const [wardrobeError, setWardrobeError] = useState<string | null>(null);
+  const [wardrobeLoading, setWardrobeLoading] = useState(true);
 
-  const [baseItemId, setBaseItemId] = useState<number | null>(null);
-  const [occasion, setOccasion] = useState('casual');
-  const [generatedOutfits, setGeneratedOutfits] = useState<Outfit[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationError, setGenerationError] = useState<string | null>(null);
-  
-  const [recommendedOutfit, setRecommendedOutfit] = useState<Outfit | null>(null);
-  const [isRecsLoading, setIsRecsLoading] = useState(false);
-  const [recsError, setRecsError] = useState<string | null>(null);
+  const [recommendedOutfit, setRecommendedOutfit] =
+    useState<Outfit | null>(null);
+
+  const [recommendationLoading, setRecommendationLoading] =
+    useState(true);
+
+  const [error, setError] = useState<string | null>(null);
+
+  /* -------------------------------------------------------
+     Fetch wardrobe
+  ------------------------------------------------------- */
 
   const fetchWardrobe = useCallback(async () => {
     const currentUser = auth.getCurrentUser();
-    if (!currentUser) return;
-    setIsWardrobeLoading(true);
-    setWardrobeError(null);
-    try {
-      const res = await fetch('http://127.0.0.1:8000/api/clothing/', {
-        headers: { 'Authorization': `Bearer ${currentUser.accessToken}` },
-      });
-      if (!res.ok) throw new Error('Failed to fetch wardrobe items.');
-      const data: ClothingItem[] = await res.json();
-      setWardrobeItems(data);
-    } catch (err) {
-      setWardrobeError(err instanceof Error ? err.message : 'An unknown error occurred.');
-    } finally {
-      setIsWardrobeLoading(false);
-    }
-  }, []);
-  
-  const fetchOutfitOfTheDay = useCallback(async () => {
-    const currentUser = auth.getCurrentUser();
-    if (!currentUser) return;
 
-    setIsRecsLoading(true);
-    setRecsError(null);
-    try {
-        const res = await fetch('http://127.0.0.1:8000/api/clothing/outfit-of-the-day/', {
-            headers: { 'Authorization': `Bearer ${currentUser.accessToken}` },
-        });
-        
-        const data = await res.json();
-        if (!res.ok) {
-            throw new Error(data.error || 'Failed to fetch the outfit.');
-        }
-        
-        if (data && typeof data === 'object' && !Array.isArray(data)) {
-            setRecommendedOutfit(data as Outfit);
-        } else {
-            setRecommendedOutfit(null);
-            setRecsError("Received an unexpected response from the server.");
-        }
-
-    } catch (err) {
-        setRecsError(err instanceof Error ? err.message : 'An unknown error occurred.');
-        setRecommendedOutfit(null); 
-    } finally {
-        setIsRecsLoading(false);
-    }
-  }, []);
-
-  const handleGenerateOutfit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    const currentUser = auth.getCurrentUser();
-    if (!currentUser || !baseItemId) {
-      setGenerationError(!currentUser ? "Please log in." : "A base item must be selected.");
+    if (!currentUser?.accessToken) {
+      setWardrobeLoading(false);
       return;
     }
 
-    setIsGenerating(true);
-    setGenerationError(null);
-    setGeneratedOutfits([]);
+    try {
+      setWardrobeLoading(true);
+
+      const response = await fetch(`${API_BASE}/api/clothing/`, {
+        headers: {
+          Authorization: `Bearer ${currentUser.accessToken}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail ||
+            data.error ||
+            `Wardrobe request failed with status ${response.status}`
+        );
+      }
+
+      setWardrobeItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Wardrobe API error:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load your wardrobe."
+      );
+    } finally {
+      setWardrobeLoading(false);
+    }
+  }, []);
+
+  /* -------------------------------------------------------
+     Fetch recommendation
+  ------------------------------------------------------- */
+
+  const fetchRecommendation = useCallback(async () => {
+    const currentUser = auth.getCurrentUser();
+
+    if (!currentUser?.accessToken) {
+      setRecommendationLoading(false);
+      return;
+    }
 
     try {
-      const response = await fetch('http://localhost:8000/api/clothing/generate_outfit/', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${currentUser.accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ base_item_id: baseItemId, occasion }),
-      });
+      setRecommendationLoading(true);
+
+      const response = await fetch(
+        `${API_BASE}/api/clothing/outfit-of-the-day/`,
+        {
+          headers: {
+            Authorization: `Bearer ${currentUser.accessToken}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to generate outfits.');
+        throw new Error(
+          data.detail ||
+            data.error ||
+            "Failed to load today's recommendation."
+        );
       }
-      const data: Outfit[] = await response.json();
-      setGeneratedOutfits(data);
+
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        setRecommendedOutfit(data as Outfit);
+      } else {
+        setRecommendedOutfit(null);
+      }
     } catch (err) {
-      setGenerationError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      console.error("Recommendation API error:", err);
+
+      // Don't show a large error on the dashboard.
+      // The empty state below will handle it.
+      setRecommendedOutfit(null);
     } finally {
-      setIsGenerating(false);
+      setRecommendationLoading(false);
     }
-  }, [baseItemId, occasion]);
+  }, []);
 
-  const handleSelectItem = (id: number) => {
-    setBaseItemId(id);
-    setGeneratedOutfits([]);
-    setGenerationError(null);
-    // Switch to the Generate Outfit tab after selection
-    setActiveTab('Generate Outfit');
-  };
-
-  const getBaseItemObject = () => {
-    if (!baseItemId) return null;
-    return wardrobeItems.find(item => item.id === baseItemId) || null;
-  }
+  /* -------------------------------------------------------
+     Initial load
+  ------------------------------------------------------- */
 
   useEffect(() => {
     const currentUser = auth.getCurrentUser();
+
     if (currentUser) {
-      setUsername(currentUser.username)
-    }
-    setIsLoading(false)
-  }, []);
-  
-  useEffect(() => {
-    if (username) {
-      if (activeTab === 'Wardrobe' && wardrobeItems.length === 0) {
-        fetchWardrobe();
-      } else if (activeTab === 'Recommended' && !recommendedOutfit) {
-        fetchOutfitOfTheDay();
-      }
-    }
-  }, [activeTab, username, fetchWardrobe, fetchOutfitOfTheDay, wardrobeItems.length, recommendedOutfit]);
-
-  const handleLogout = () => {
-    auth.logoutUser();
-    setUsername(null);
-    setWardrobeItems([]);
-    setDropdownOpen(false);
-    router.push('/login');
-  };
-
-  const renderContent = () => {
-    if (!username && ['Wardrobe', 'Recommended', 'Generate Outfit'].includes(activeTab)) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <LogIn className="w-12 h-12 text-gray-400 mb-4" />
-            <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-200">Please Login</h3>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">Log in to view your wardrobe and generate outfits.</p>
-            <button
-              onClick={() => router.push('/login')}
-              className="mt-6 bg-gradient-to-r from-pink-500 to-fuchsia-600 text-white font-semibold px-6 py-2 rounded-lg shadow-md hover:shadow-lg transition"
-            >
-              Go to Login
-            </button>
-          </div>
-        )
+      setUsername(currentUser.username);
     }
 
-    switch (activeTab) {
-      case 'Wardrobe':
-        return <WardrobeGrid
-                  items={wardrobeItems}
-                  isLoading={isWardrobeLoading}
-                  error={wardrobeError}
-                  onSelectItem={handleSelectItem}
-                  selectedItemId={baseItemId}
-                />;
-      case 'Generate Outfit':
-        return <OutfitGenerator
-          baseItem={getBaseItemObject()}
-          onClearBaseItem={() => setBaseItemId(null)}
-          occasion={occasion}
-          setOccasion={setOccasion}
-          outfits={generatedOutfits}
-          loading={isGenerating}
-          error={generationError}
-          onSubmit={handleGenerateOutfit}
-        />
-        
-      case 'Recommended':
-        return <RecommendedOutfitDisplay 
-                  outfit={recommendedOutfit}
-                  isLoading={isRecsLoading}
-                  error={recsError}
-                />
+    fetchWardrobe();
+    fetchRecommendation();
+  }, [fetchWardrobe, fetchRecommendation]);
 
-      default:
-        return null;
-    }
-  }
+  /* -------------------------------------------------------
+     Derived values
+  ------------------------------------------------------- */
 
-  const handleTabClick = (name: string) => {
-    setActiveTab(name)
-  }
+  const firstName = username
+    ? username.charAt(0).toUpperCase() + username.slice(1)
+    : "there";
 
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: () => {
-      const currentIndex = tabs.findIndex(t => t.name === activeTab);
-      const nextIndex = (currentIndex + 1) % tabs.length;
-      handleTabClick(tabs[nextIndex].name);
-    },
-    onSwipedRight: () => {
-      const currentIndex = tabs.findIndex(t => t.name === activeTab);
-      const nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
-      handleTabClick(tabs[nextIndex].name);
-    },
-    trackMouse: true,
-  });
+  const recentItems = wardrobeItems.slice(0, 4);
 
-  const renderAuthStatus = () => {
-    if (isLoading) {
-      return <Loader2 className="w-5 h-5 animate-spin" />;
-    }
-    if (username) {
-      return (
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="w-8 h-8 flex items-center justify-center bg-zinc-800 text-white dark:bg-white dark:text-black rounded-full text-sm font-bold"
-          >
-            {username.charAt(0).toUpperCase()}
-          </button>
-          <AnimatePresence>
-            {dropdownOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="absolute right-0 mt-2 w-36 rounded-md shadow-lg bg-white dark:bg-zinc-800 z-10"
-              >
-                <ul className="py-1 text-sm text-gray-700 dark:text-gray-100">
-                  <li
-                    onClick={() => {
-                      router.push('/profile')
-                      setDropdownOpen(false)
-                    }}
-                    className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-zinc-700 cursor-pointer"
-                  >
-                    Profile
-                  </li>
-                  <li
-                    onClick={handleLogout}
-                    className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-zinc-700 text-red-500 cursor-pointer"
-                  >
-                    Logout
-                  </li>
-                </ul>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      );
-    }
+  const hasWardrobe = wardrobeItems.length > 0;
+
+  /* -------------------------------------------------------
+     Not logged in
+  ------------------------------------------------------- */
+
+  if (!username) {
     return (
-       <button
-        onClick={() => router.push('/login')}
-        className="text-sm bg-zinc-800 text-white px-4 py-1.5 rounded-full hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition-colors"
-      >
-        Login
-       </button>
+      <AppShell>
+        <div className="min-h-screen px-5 py-8 sm:px-8 lg:px-10">
+          <div className="mx-auto flex min-h-[75vh] max-w-5xl items-center justify-center">
+            <div className="max-w-lg text-center">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-pink-100 to-violet-100">
+                <Sparkles className="h-9 w-9 text-pink-500" />
+              </div>
+
+              <p className="mb-3 text-sm font-medium uppercase tracking-[0.2em] text-pink-500">
+                Zyvia AI Stylist
+              </p>
+
+              <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 sm:text-5xl">
+                Your wardrobe,
+                <br />
+                <span className="bg-gradient-to-r from-pink-500 to-violet-500 bg-clip-text text-transparent">
+                  styled by AI.
+                </span>
+              </h1>
+
+              <p className="mx-auto mt-5 max-w-md text-base leading-7 text-zinc-500">
+                Discover outfits, organize your wardrobe, and find your
+                personal style with Zyvia.
+              </p>
+
+              <button
+                onClick={() => router.push("/login")}
+                className="mt-8 inline-flex items-center gap-2 rounded-full bg-zinc-900 px-7 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl"
+              >
+                Get started
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </AppShell>
     );
   }
 
+  /* -------------------------------------------------------
+     Dashboard
+  ------------------------------------------------------- */
+
   return (
-    <div className={`min-h-screen font-sans antialiased max-w-md md:max-w-lg mx-auto px-4 py-6 bg-zinc-50 dark:bg-black text-zinc-900 dark:text-zinc-100 transition-colors duration-500 ${darkMode ? 'dark' : ''}`}>
-      <header className="flex justify-between items-center mb-6 relative">
-        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500">
-          Zyvia ✨
-        </h1>
+    <AppShell>
+      <div className="min-h-screen bg-gradient-to-br from-[#fffafd] via-[#faf8ff] to-[#f7f4ff] px-5 py-6 sm:px-8 lg:px-10">
+        <div className="mx-auto max-w-[1500px]">
 
-        <div className="flex items-center space-x-4" ref={dropdownRef}>
-          <button onClick={() => setDarkMode(prev => !prev)} aria-label="Toggle theme" className="text-zinc-500 dark:text-zinc-400">
-            {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
+          {/* =================================================
+              TOP HEADER
+          ================================================= */}
 
-          {renderAuthStatus()}
-        </div>
-      </header>
+          <header className="mb-8 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-zinc-400">
+                Welcome back
+              </p>
 
-      {globalError && (
-        <div className="bg-red-100 text-red-600 px-4 py-2 rounded-lg mb-6 text-sm text-center">
-          {globalError}
-        </div>
-      )}
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
+                Hi, {firstName} ✨
+              </h1>
 
-      <div className="grid grid-cols-3 gap-3 mb-6 p-1 bg-zinc-200/70 dark:bg-zinc-900/70 rounded-full">
-        {tabs.map(({ name, icon: Icon }) => (
-          <button
-            key={name}
-            onClick={() => handleTabClick(name)}
-            className={`relative flex items-center justify-center gap-2 py-2.5 px-4 rounded-full text-sm font-semibold transition-colors duration-300 ${
-              activeTab === name
-                ? 'text-white'
-                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
-            }`}
-          >
-            {activeTab === name && (
-                <motion.div
-                    layoutId="active-pill"
-                    className="absolute inset-0 bg-gradient-to-r from-pink-500 to-fuchsia-600"
-                    style={{ borderRadius: 9999 }}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
+              <p className="mt-1 text-sm text-zinc-500">
+                Ready to find your next look?
+              </p>
+            </div>
+
+            <button
+              onClick={() => router.push("/profile")}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-sm font-semibold text-white shadow-md transition hover:scale-105"
+            >
+              {firstName.charAt(0).toUpperCase()}
+            </button>
+          </header>
+
+          {/* =================================================
+              HERO
+          ================================================= */}
+
+          <section className="relative mb-8 overflow-hidden rounded-[2rem] bg-gradient-to-br from-[#f8dce9] via-[#eee1f5] to-[#ddd9f5] p-7 sm:p-10 lg:p-12">
+            {/* Decorative circles */}
+            <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/20 blur-2xl" />
+            <div className="absolute -bottom-20 right-24 h-48 w-48 rounded-full bg-pink-300/20 blur-3xl" />
+
+            <div className="relative z-10 max-w-2xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/60 px-3 py-1.5 text-xs font-semibold text-zinc-700 backdrop-blur">
+                <Sparkles className="h-3.5 w-3.5 text-pink-500" />
+                AI PERSONAL STYLIST
+              </div>
+
+              <h2 className="text-3xl font-semibold leading-tight tracking-tight text-zinc-900 sm:text-4xl lg:text-5xl">
+                Dress for the
+                <br />
+                <span className="italic text-pink-600">
+                  way you feel.
+                </span>
+              </h2>
+
+              <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-600 sm:text-base">
+                Let Zyvia create outfits from the clothes you already own.
+                Discover combinations that match your style, occasion, and
+                mood.
+              </p>
+
+              <div className="mt-7 flex flex-wrap gap-3">
+                <button
+                  onClick={() => router.push("/generate")}
+                  className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-3 text-sm font-semibold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+                >
+                  <Wand2 className="h-4 w-4" />
+                  Create an outfit
+                </button>
+
+                <button
+                  onClick={() => router.push("/wardrobe")}
+                  className="inline-flex items-center gap-2 rounded-full bg-white/70 px-5 py-3 text-sm font-semibold text-zinc-800 backdrop-blur transition hover:bg-white"
+                >
+                  View wardrobe
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* =================================================
+              QUICK STATS
+          ================================================= */}
+
+          <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="rounded-2xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-pink-100">
+                <Shirt className="h-5 w-5 text-pink-600" />
+              </div>
+
+              <p className="text-2xl font-semibold text-zinc-900">
+                {wardrobeLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  wardrobeItems.length
+                )}
+              </p>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                Wardrobe items
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100">
+                <Sparkles className="h-5 w-5 text-violet-600" />
+              </div>
+
+              <p className="text-2xl font-semibold text-zinc-900">
+                AI
+              </p>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                Personal stylist
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100">
+                <Wand2 className="h-5 w-5 text-rose-600" />
+              </div>
+
+              <p className="text-2xl font-semibold text-zinc-900">
+                4
+              </p>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                Style categories
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/70 bg-white/70 p-5 shadow-sm backdrop-blur">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-fuchsia-100">
+                <Heart className="h-5 w-5 text-fuchsia-600" />
+              </div>
+
+              <p className="text-2xl font-semibold text-zinc-900">
+                Your
+              </p>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                Personal style
+              </p>
+            </div>
+          </section>
+
+          {/* =================================================
+              CONTENT GRID
+          ================================================= */}
+
+          <div className="grid gap-8 xl:grid-cols-[1.5fr_1fr]">
+
+            {/* =============================================
+                OUTFIT OF THE DAY
+            ============================================= */}
+
+            <section className="rounded-[2rem] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur sm:p-7">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-pink-500">
+                    Curated for you
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-semibold text-zinc-900">
+                    Outfit of the day
+                  </h2>
+                </div>
+
+                <button
+                  onClick={fetchRecommendation}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 transition hover:bg-zinc-200"
+                  title="Refresh recommendation"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${
+                      recommendationLoading ? "animate-spin" : ""
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {recommendationLoading ? (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="aspect-square animate-pulse rounded-2xl bg-zinc-100"
+                    />
+                  ))}
+                </div>
+              ) : recommendedOutfit ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    <OutfitItem
+                      item={recommendedOutfit.top}
+                      label="Top"
+                    />
+
+                    <OutfitItem
+                      item={recommendedOutfit.bottom}
+                      label="Bottom"
+                    />
+
+                    <OutfitItem
+                      item={recommendedOutfit.shoes}
+                      label="Shoes"
+                    />
+
+                    <OutfitItem
+                      item={recommendedOutfit.outerwear}
+                      label="Outerwear"
+                    />
+                  </div>
+
+                  <div className="mt-6 rounded-2xl bg-[#faf7fb] p-4">
+                    <p className="text-sm leading-6 text-zinc-600">
+                      {recommendedOutfit.explanation}
+                    </p>
+
+                    {recommendedOutfit.tags?.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {recommendedOutfit.tags.map((tag, index) => (
+                          <span
+                            key={index}
+                            className="rounded-full bg-white px-3 py-1 text-xs font-medium text-zinc-600 shadow-sm"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl bg-gradient-to-br from-[#faf5fa] to-[#f4f0fa] px-6 text-center">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+                    <Sparkles className="h-6 w-6 text-pink-500" />
+                  </div>
+
+                  <h3 className="font-semibold text-zinc-800">
+                    Your first look is waiting
+                  </h3>
+
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
+                    Add a few pieces to your wardrobe and Zyvia will create
+                    personalized outfit recommendations.
+                  </p>
+
+                  <button
+                    onClick={() => router.push("/upload")}
+                    className="mt-5 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-800"
+                  >
+                    Add clothing
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* =============================================
+                QUICK ACTIONS
+            ============================================= */}
+
+            <section>
+              <div className="mb-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-500">
+                  Explore
+                </p>
+
+                <h2 className="mt-1 text-xl font-semibold text-zinc-900">
+                  What would you like to do?
+                </h2>
+              </div>
+
+              <div className="space-y-4">
+
+                {/* Generate */}
+                <motion.button
+                  whileHover={{ y: -3 }}
+                  onClick={() => router.push("/generate")}
+                  className="group flex w-full items-center gap-4 rounded-2xl bg-zinc-900 p-5 text-left text-white shadow-md transition"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10">
+                    <Wand2 className="h-5 w-5" />
+                  </div>
+
+                  <div className="flex-1">
+                    <p className="font-semibold">
+                      Generate an outfit
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-white/60">
+                      Build a look around something you already own.
+                    </p>
+                  </div>
+
+                  <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+                </motion.button>
+
+                {/* Wardrobe */}
+                <motion.button
+                  whileHover={{ y: -3 }}
+                  onClick={() => router.push("/wardrobe")}
+                  className="group flex w-full items-center gap-4 rounded-2xl border border-white/80 bg-white/80 p-5 text-left shadow-sm backdrop-blur transition"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-pink-100">
+                    <Shirt className="h-5 w-5 text-pink-600" />
+                  </div>
+
+                  <div className="flex-1">
+                    <p className="font-semibold text-zinc-900">
+                      Open my wardrobe
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      Browse and organize your clothing collection.
+                    </p>
+                  </div>
+
+                  <ArrowRight className="h-5 w-5 text-zinc-400 transition-transform group-hover:translate-x-1" />
+                </motion.button>
+
+                {/* Explore */}
+                <motion.button
+                  whileHover={{ y: -3 }}
+                  onClick={() => router.push("/explore")}
+                  className="group flex w-full items-center gap-4 rounded-2xl border border-white/80 bg-white/80 p-5 text-left shadow-sm backdrop-blur transition"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-100">
+                    <Sparkles className="h-5 w-5 text-violet-600" />
+                  </div>
+
+                  <div className="flex-1">
+                    <p className="font-semibold text-zinc-900">
+                      Explore styles
+                    </p>
+
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      Discover inspiration and new outfit ideas.
+                    </p>
+                  </div>
+
+                  <ArrowRight className="h-5 w-5 text-zinc-400 transition-transform group-hover:translate-x-1" />
+                </motion.button>
+
+              </div>
+            </section>
+          </div>
+
+          {/* =================================================
+              RECENT WARDROBE
+          ================================================= */}
+
+          <section className="mt-10">
+            <div className="mb-5 flex items-end justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-pink-500">
+                  Your collection
+                </p>
+
+                <h2 className="mt-1 text-xl font-semibold text-zinc-900">
+                  Recently added
+                </h2>
+              </div>
+
+              <button
+                onClick={() => router.push("/wardrobe")}
+                className="hidden items-center gap-1 text-sm font-semibold text-zinc-600 transition hover:text-pink-600 sm:flex"
+              >
+                View all
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {wardrobeLoading ? (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="aspect-[4/5] animate-pulse rounded-2xl bg-white"
+                  />
+                ))}
+              </div>
+            ) : hasWardrobe ? (
+              <>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                  {recentItems.map((item) => (
+                    <ClothingCard
+                      key={item.id}
+                      item={item}
+                      onClick={() => router.push("/wardrobe")}
+                    />
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => router.push("/wardrobe")}
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white/70 py-3 text-sm font-semibold text-zinc-700 transition hover:bg-white sm:hidden"
+                >
+                  View full wardrobe
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </>
+            ) : (
+              <div className="rounded-[2rem] border border-dashed border-zinc-300 bg-white/50 px-6 py-12 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-pink-50">
+                  <Shirt className="h-6 w-6 text-pink-500" />
+                </div>
+
+                <h3 className="font-semibold text-zinc-800">
+                  Your wardrobe is empty
+                </h3>
+
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
+                  Upload your first clothing item and start building your
+                  personal digital wardrobe.
+                </p>
+
+                <button
+                  onClick={() => router.push("/upload")}
+                  className="mt-5 inline-flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-800"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add first item
+                </button>
+              </div>
             )}
-            <Icon className="w-4 h-4 relative" />
-            <span className="relative">{name}</span>
-          </button>
-        ))}
-      </div>
+          </section>
 
-      <main
-        {...swipeHandlers}
-        className="min-h-[550px] rounded-3xl p-4 md:p-6 shadow-sm border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl overflow-hidden"
-      >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-            className="h-full"
-          >
-            {renderContent()}
-          </motion.div>
-        </AnimatePresence>
-      </main>
-      <motion.button
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => router.push('/upload')}
-        className="fixed bottom-6 md:bottom-10 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white dark:bg-white dark:text-black w-16 h-16 flex items-center justify-center rounded-full shadow-lg hover:shadow-xl transition-shadow duration-300"
-        aria-label="Upload"
-      >
-        <span className="text-3xl font-bold -mt-1">+</span>
-      </motion.button>
-    </div>
-  )
+          {/* =================================================
+              FOOTER SPACE
+          ================================================= */}
+
+          <div className="h-24" />
+        </div>
+
+        {/* ===================================================
+            FLOATING UPLOAD BUTTON
+        =================================================== */}
+
+        <motion.button
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => router.push("/upload")}
+          className="fixed bottom-24 right-6 z-40 hidden h-14 w-14 items-center justify-center rounded-full bg-zinc-900 text-white shadow-xl transition hover:shadow-2xl sm:bottom-8 sm:right-8 sm:flex"
+          aria-label="Add clothing"
+        >
+          <Plus className="h-6 w-6" />
+        </motion.button>
+
+        {/* Small error indicator */}
+        {error && (
+          <div className="fixed bottom-6 left-6 z-40 hidden max-w-xs rounded-xl border border-red-100 bg-white px-4 py-3 text-xs text-red-500 shadow-lg lg:block">
+            {error}
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
 }
